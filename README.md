@@ -4,7 +4,7 @@ SymptomAssist is a hybrid AI medical advisor that combines **Symbolic Logic** (v
 
 ---
 
-## 🏗️ Project Structure
+##  Project Structure
 The project follows a modular, scalable architecture:
 
 ```text
@@ -30,7 +30,7 @@ cl_symptom/
 
 ---
 
-## ⚙️ Setup Instructions
+##  Setup Instructions
 
 ### 1. Prerequisites
 - **Python 3.10+** installed.
@@ -51,7 +51,7 @@ GROQ_API_KEY=your_groq_api_key_here
 
 ---
 
-## 🚀 Running the System
+##  Running the System
 
 To start the FastAPI server with live-reloading:
 ```bash
@@ -61,7 +61,7 @@ Once started, open your browser at [**http://127.0.0.1:8000**](http://127.0.0.1:
 
 ---
 
-## 🛠️ Key Technical Features
+##  Key Technical Features
 1.  **Neuro-symbolic Reasoning**: Decouples medical facts (KG) from conversational reasoning (LLM).
 2.  **Logic-Grounded RAG**: Injects curated medical documentation into the LLM prompt to eliminate hallucinations.
 3.  **Real-time Diagnostics Dashboard**: Live visualization of extracted symptoms, KB matches, and RAG sources.
