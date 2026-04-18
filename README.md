@@ -5,7 +5,7 @@ SymptomAssist is a hybrid AI medical advisor that combines **Symbolic Logic** (v
 ---
 
 ##  Project Structure
-The project follows a modular, scalable architecture:
+The project the following architecture:
 
 ```text
 cl_symptom/
@@ -62,12 +62,11 @@ Once started, open your browser at [**http://127.0.0.1:8000**](http://127.0.0.1:
 ---
 
 ##  Key Technical Features
-1.  **Neuro-symbolic Reasoning**: Decouples medical facts (KG) from conversational reasoning (LLM).
+1.  **Neuro-symbolic Reasoning**: Decouples medical facts from conversational reasoning (LLM).
 2.  **Logic-Grounded RAG**: Injects curated medical documentation into the LLM prompt to eliminate hallucinations.
 3.  **Real-time Diagnostics Dashboard**: Live visualization of extracted symptoms, KB matches, and RAG sources.
 4.  **Priority Red Flag Detection**: Automatic highlighting of critical symptoms requiring emergency care.
 
 ---
 
-## 💡 Usage Note
-*This AI assistant is for informational purposes only and is **not** a substitute for professional medical advice. For emergencies, always call **108** (or your local emergency number).*
+
