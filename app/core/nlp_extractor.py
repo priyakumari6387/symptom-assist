@@ -242,11 +242,14 @@ class SymptomExtractor:
             if any(child.dep_ == "neg" or child.lemma_.lower() in negation_words for child in token.children):
                 return True
             
-            # 2. Check ancestors and their children (siblings/head negation)
+            # 2. Check ancestors (e.g., "denies pain" or "don't HAVE headache")
             curr = token
             while curr != curr.head:
                 curr = curr.head
-                # If the parent has a negation child (e.g. "don't HAVE headache")
+                # Check if the ancestor itself is a negation word (e.g. "DENIES pain")
+                if curr.lemma_.lower() in negation_words:
+                    return True
+                # If the ancestor has a negation child (e.g. "don't HAVE headache")
                 if any(child.dep_ == "neg" or child.lemma_.lower() in negation_words for child in curr.children):
                     return True
                 if curr.pos_ == "VERB":
