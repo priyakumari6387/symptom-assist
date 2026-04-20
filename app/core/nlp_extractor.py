@@ -19,6 +19,15 @@ import os
 from typing import NamedTuple
 import spacy
 
+try:
+    from rapidfuzz import process as fuzz_process, fuzz
+    _FUZZY_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _FUZZY_AVAILABLE = False
+
+# Minimum similarity score (0-100) to accept a fuzzy match
+FUZZY_THRESHOLD = 85
+
 
 # ---------------------------------------------------------------------------
 # 1. Synonym generator — turns dataset symptom names into lexicon entries
@@ -206,6 +215,9 @@ class SymptomExtractor:
             self.phrase_to_symptom.keys(), key=len, reverse=True
         )
 
+        # Pre-build a flat list of all phrases for fuzzy candidate lookup
+        self._all_phrases: list[str] = list(self.phrase_to_symptom.keys())
+
         self.negation_patterns = re.compile(
             r"\b(no|not|without|don't have|doesn't have|haven't|hasn't|never|"
             r"no sign of|denies|absence of)\b",
@@ -257,6 +269,24 @@ class SymptomExtractor:
 
         return False
 
+    def _fuzzy_match_token(self, token: str) -> tuple[str, str] | None:
+        """
+        Try to fuzzy-match a single token (or short phrase) against all known
+        lexicon phrases. Returns (matched_phrase, canonical) or None.
+        """
+        if not _FUZZY_AVAILABLE or len(token) < 3:
+            return None
+        result = fuzz_process.extractOne(
+            token,
+            self._all_phrases,
+            scorer=fuzz.WRatio,
+            score_cutoff=FUZZY_THRESHOLD,
+        )
+        if result is None:
+            return None
+        matched_phrase, score, _ = result
+        return matched_phrase, self.phrase_to_symptom[matched_phrase]
+
     def extract(self, text: str) -> ExtractionResult:
         text_lower = text.lower()
         doc = self.nlp(text) if self.nlp else None
@@ -289,6 +319,47 @@ class SymptomExtractor:
                         found_symptoms.append(canonical)
 
                 start = idx + 1
+
+        # ── Fuzzy fallback pass ──────────────────────────────────────────
+        # Tokenize the text into word n-grams (1–3 words) that weren't
+        # already covered by exact matching, then fuzzy-match each against
+        # the full phrase lexicon.
+        if _FUZZY_AVAILABLE:
+            words = re.findall(r"[a-z']+", text_lower)
+            # Generate trigrams → bigrams → unigrams (longest wins)
+            candidates: list[tuple[int, str]] = []
+            for n in (3, 2, 1):
+                for i in range(len(words) - n + 1):
+                    ngram = " ".join(words[i: i + n])
+                    approx_pos = text_lower.find(ngram)
+                    if approx_pos == -1:
+                        continue
+                    positions = set(range(approx_pos, approx_pos + len(ngram)))
+                    if positions & matched_positions:
+                        continue  # already matched exactly
+                    candidates.append((approx_pos, ngram))
+
+            seen_positions: set[int] = set()
+            for approx_pos, ngram in candidates:
+                positions = set(range(approx_pos, approx_pos + len(ngram)))
+                if positions & seen_positions:
+                    continue
+
+                hit = self._fuzzy_match_token(ngram)
+                if hit is None:
+                    continue
+
+                matched_phrase, canonical = hit
+                seen_positions |= positions
+                matched_positions |= positions
+                raw_mentions.append(ngram)
+
+                if self._is_negated(doc, approx_pos, approx_pos + len(ngram)):
+                    if canonical not in negated_symptoms:
+                        negated_symptoms.append(canonical)
+                else:
+                    if canonical not in found_symptoms:
+                        found_symptoms.append(canonical)
 
         return ExtractionResult(
             symptoms     = found_symptoms,
