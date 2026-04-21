@@ -137,10 +137,16 @@ _MANUAL_SYNONYMS: dict[str, list[str]] = {
 
 def _auto_synonyms(canonical: str) -> list[str]:
     """
-    Generate simple surface-form variants from a canonical symptom string.
-    E.g.  "burning urination" →  ["burning urination", "urination burning",
-                                   "burning when urinating", "burn urination"]
+    Generates simple variations of a canonical symptom string.
+
+    Args:
+        canonical (str): The base symptom string.
+
+    Returns:
+        list[str]: List of generated synonym variants.
+
     """
+
     variants = {canonical}
     # Replace underscores if present
     variants.add(canonical.replace("_", " "))
@@ -152,9 +158,19 @@ def _auto_synonyms(canonical: str) -> list[str]:
 
 def build_lexicon_from_csv(csv_path: str) -> dict[str, list[str]]:
     """
-    Read symptom columns from the CSV and return a canonical → phrases dict.
-    Manual synonyms are merged in; CSV-derived symptoms without a manual
-    entry get auto-generated variants.
+    Builds a symptom lexicon from a CSV dataset.
+
+    Reads symptom columns from the dataset and creates a mapping of
+    canonical symptom names to their possible phrase variations.
+
+    Args:
+        csv_path (str): Path to the symptom CSV file.
+
+    Returns:
+        dict[str, list[str]]: Dictionary mapping canonical symptoms to phrases.
+
+    Raises:
+        FileNotFoundError: If the dataset file does not exist.
     """
     if not os.path.exists(csv_path):
         raise FileNotFoundError(f"Dataset not found: {csv_path}")
@@ -191,6 +207,14 @@ def build_lexicon_from_csv(csv_path: str) -> dict[str, list[str]]:
 # ---------------------------------------------------------------------------
 
 class ExtractionResult(NamedTuple):
+    """
+    Represents the result of symptom extraction.
+
+    Attributes:
+        symptoms (list): List of detected canonical symptom names.
+        raw_mentions (list): List of original matched phrases from input text.
+        negated (list): List of symptoms that were negated in the input.
+    """
     symptoms:    list   # canonical symptom names found
     raw_mentions: list  # original phrases from user text
     negated:     list   # symptoms mentioned but negated ("no fever")
@@ -198,6 +222,18 @@ class ExtractionResult(NamedTuple):
 
 class SymptomExtractor:
     def __init__(self, csv_path: str | None = None):
+        """
+        Initializes the SymptomExtractor.
+
+        Builds the symptom lexicon either from a CSV file or fallback manual synonyms.
+        Also prepares lookup structures and loads NLP model.
+
+        Args:
+            csv_path (str | None): Optional path to the dataset CSV file.
+
+        Returns:
+            None
+        """
         # Build lexicon from CSV if path provided; fall back to manual synonyms
         if csv_path and os.path.exists(csv_path):
             lexicon = build_lexicon_from_csv(csv_path)
@@ -236,7 +272,18 @@ class SymptomExtractor:
 
     def _is_negated(self, doc, start_char: int, end_char: int) -> bool:
         """
-        Determines if a symptom mention is negated using the dependency tree.
+        Checks whether a detected symptom is negated in the sentence.
+
+        Uses dependency parsing to determine if negation words are associated
+        with the symptom.
+
+        Args:
+            doc (spacy.tokens.Doc): spaCy processed document.
+            start_char (int): Start index of the symptom in text.
+            end_char (int): End index of the symptom in text.
+
+        Returns:
+            bool: True if the symptom is negated, otherwise False.
         """
         if not doc:
             return False
@@ -271,8 +318,14 @@ class SymptomExtractor:
 
     def _fuzzy_match_token(self, token: str) -> tuple[str, str] | None:
         """
-        Try to fuzzy-match a single token (or short phrase) against all known
-        lexicon phrases. Returns (matched_phrase, canonical) or None.
+        Attempts to fuzzy match a token or phrase against known symptom phrases.
+
+        Args:
+            token (str): Input token or phrase.
+
+        Returns:
+            tuple[str, str] | None: Matched phrase and canonical symptom,
+            or None if no match is found.
         """
         if not _FUZZY_AVAILABLE or len(token) < 3:
             return None
@@ -288,6 +341,23 @@ class SymptomExtractor:
         return matched_phrase, self.phrase_to_symptom[matched_phrase]
 
     def extract(self, text: str) -> ExtractionResult:
+        """
+        Extracts symptoms from input text.
+
+        Performs exact matching, negation detection, and fuzzy matching
+        to identify symptoms mentioned by the user.
+
+        Args:
+            text (str): User input text describing symptoms.
+
+        Returns:
+            ExtractionResult: Contains detected symptoms, raw mentions,
+            and negated symptoms.
+
+        Example:
+            >>> extractor.extract("I have fever but no cough")
+            ExtractionResult(symptoms=["fever"], raw_mentions=["fever"], negated=["cough"])
+        """
         text_lower = text.lower()
         doc = self.nlp(text) if self.nlp else None
 
