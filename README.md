@@ -1,5 +1,5 @@
 
-# **# 🩺 SymptomAssist AI**
+# **🩺 SymptomAssist AI**
 
 **A hybrid medical advisor that thinks in two layers — structured medical knowledge and conversational reasoning — so it can tell you what's wrong, not just what might be wrong.**
 
@@ -7,7 +7,7 @@ Most symptom checkers are either too vague ("you might have a cold or cancer") o
 
 ---
 
-## ## 📸 What It Looks Like
+##  📸 What It Looks Like
 
 The interface has two panels working in parallel. On the left, a conversational chat. On the right, a live diagnostics view showing exactly what the system is doing — extracted symptoms, knowledge graph traversal, and ranked condition matches.
 
@@ -25,7 +25,7 @@ The diagnostics tab shows extracted symptoms as tags, then surfaces ranked condi
 
 ---
 
-## ## 🧠 How It Works
+## 🧠 How It Works
 
 When you describe your symptoms, SymptomAssist doesn't just hand them to an LLM and hope for the best. It runs a structured two-stage pipeline:
 
@@ -69,7 +69,7 @@ This separation matters. The knowledge graph catches things the LLM might halluc
 
 ---
 
-## ## 🚀 Key Features
+##  🚀 Key Features
 
 ### **Neuro-symbolic Reasoning**
 
@@ -89,7 +89,7 @@ The right panel shows what's happening at each stage — extracted symptom tags,
 
 ---
 
-## ## ⚙️ Why This Architecture
+## ⚙️ Why This Architecture
 
 Pure LLM symptom checkers have a well-documented problem: they're fluent, but not always accurate. They can generate convincing-sounding diagnoses that have no grounding in medical literature — and do it confidently.
 
@@ -99,7 +99,7 @@ The result is a system that's harder to fool and easier to audit. You can see ex
 
 ---
 
-## ## 📂 Project Structure
+## 📂 Project Structure
 
 ```
 
@@ -131,14 +131,14 @@ cl_symptom/
 
 ---
 
-## ## 🚀 Getting Started
+## 🚀 Getting Started
 
-### ###Prerequisites
+### Prerequisites
 
 - Python 3.10+
 - A [Groq API key](https://console.groq.com) (free tier works fine)
 
-### ###Install
+### Install
 
 ```bash
 
@@ -148,7 +148,7 @@ pip install -r requirements.txt
 
 ```
 
-### ###Configure
+### Configure
 
 Copy the example env file and add your keys:
 
@@ -167,7 +167,7 @@ GEMINI_API_KEY=your_gemini_key_here   # optional
 
 > Never commit your `.env` file. It's already in `.gitignore`.
 
-### ###Run
+### Run
 
 ```bash
 
@@ -179,7 +179,7 @@ Open [http://localhost:8000](http://localhost:8000) in your browser.
 
 ---
 
-## ## 🤝 Contributing
+## 🤝 Contributing
 
 Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
@@ -187,6 +187,6 @@ If you're fixing a bug or adding a feature, open an issue first so we can align 
 
 ---
 
-## ## ⚠️ Disclaimer
+## ⚠️ Disclaimer
 
 SymptomAssist is a research and educational tool. It is not a substitute for professional medical advice, diagnosis, or treatment. If you are experiencing a medical emergency, call 108 or your local emergency number immediately.
