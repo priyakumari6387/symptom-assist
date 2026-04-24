@@ -10,6 +10,6 @@ networkx
 # chromadb
 
 # For production-grade NLP (upgrade from keyword matching):
-# spacy
-# # then run: python -m spacy download en_core_web_sm
+spacy
+# then run: python -m spacy download en_core_web_sm
 
