@@ -63,6 +63,10 @@ NLP = SymptomExtractor(csv_path=_SYMPTOM_CSV)
 print("[startup] Groq client ready.")
 GROQ = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
+# In-memory store for conversational state. Maps session_id -> list of symptoms.
+# In production, use Redis or a database.
+SESSION_STORE = {}
+
 # ---------------------------------------------------------------------------
 # Server-side session store  { session_id -> {symptoms, last_active} }
 # Sessions expire after 2 hours of inactivity.

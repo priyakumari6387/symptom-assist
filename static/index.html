@@ -1196,10 +1196,14 @@
   const sendBtn  = document.getElementById('send-btn');
   const newChatBtn = document.getElementById('new-chat-btn');
 
+  function generateSessionId() {
+    return (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
+  }
   let history = [];
   let allSymptoms = [];
   let sessionId = null;   // server-assigned session ID
   let isLoading = false;
+  let sessionId = generateSessionId();
 
   newChatBtn.addEventListener('click', () => {
     if (confirm('Start a new session? Current conversation will be cleared.')) {
