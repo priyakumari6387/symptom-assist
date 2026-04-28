@@ -40,8 +40,8 @@ def load_documents_from_csv(csv_path: str) -> list[dict]:
             documents.append({
                 "id":        f"doc_{row['condition'].strip()}",
                 "condition": row["condition"].strip(),
-                "title":     row["title"].strip(),
-                "content":   row["content"].strip(),
+                "title": (row.get("title") or "").strip(),
+                "content": (row.get("content") or "").strip(),
             })
 
     print(f"[RAG] Loaded {len(documents)} medical documents from CSV")
