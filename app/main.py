@@ -24,7 +24,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 from groq import Groq
 from dotenv import load_dotenv
@@ -112,20 +112,20 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 
 class Message(BaseModel):
-    role: str       # "user" or "model" (Gemini uses "model", but frontend might still send it)
-    content: str
+    role: str = Field(..., pattern="^(user|assistant|model)$")
+    content: str = Field(..., min_length=1, max_length=1000)
 
 class SymptomDetail(BaseModel):
-    name: str
-    onset_order: Optional[int] = None      # 1 = first, 2 = second, etc.
-    duration: Optional[str] = None         # e.g., "3 days", "since morning"
-    severity: Optional[str] = None         # e.g., "mild", "severe"
+    name: str = Field(..., min_length=1, max_length=100)
+    onset_order: Optional[int] = Field(None, ge=1, le=50)
+    duration: Optional[str] = Field(None, max_length=100)
+    severity: Optional[str] = Field(None, max_length=50)
 
 class ChatRequest(BaseModel):
-    messages: List[Message]
-    session_id: Optional[str] = None        # server echoes this back; client stores and re-sends
-    extracted_symptoms: Optional[List[str]] = []  # kept for backwards-compat
-    temporal_context: Optional[List[SymptomDetail]] = [] # New: detailed symptom timing
+    messages: List[Message] = Field(..., max_length=20)
+    session_id: Optional[str] = Field(None, max_length=100)
+    extracted_symptoms: Optional[List[str]] = Field([], max_length=30)
+    temporal_context: Optional[List[SymptomDetail]] = Field([], max_length=30)
 
 class ChatResponse(BaseModel):
     reply: str
