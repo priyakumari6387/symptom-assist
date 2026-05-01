@@ -26,7 +26,7 @@ except ImportError:  # pragma: no cover
     _FUZZY_AVAILABLE = False
 
 # Minimum similarity score (0-100) to accept a fuzzy match
-FUZZY_THRESHOLD = 85
+FUZZY_THRESHOLD = 92
 
 # Optional: use spaCy for better dependency parsing and tense detection.
 try:
@@ -221,7 +221,11 @@ class ExtractionResult(NamedTuple):
     symptoms:    list   # canonical symptom names found (present/current)
     raw_mentions: list  # original phrases from user text
     negated:     list   # symptoms mentioned but negated ("no fever")
+ feature/context-aware-extraction
     tagged:      list   # list of dicts: {symptom, status: present|past|negated, raw, span}
+
+    noise: list
+ main
 
 
 class SymptomExtractor:
@@ -543,12 +547,44 @@ class SymptomExtractor:
                 else:
                     if canonical not in found_symptoms:
                         found_symptoms.append(canonical)
+        # 🔥 Filter: keep only symptoms that actually relate to input words
+        cleaned_symptoms = []
+        STOPWORDS = {"and", "or", "the", "a", "i", "have", "has", "had"}
 
+        input_words = set(
+            word for word in re.findall(r"[a-z']+", text_lower)
+            if word not in STOPWORDS
+        )
+
+        cleaned_symptoms = []
+
+        for symptom in found_symptoms:
+            symptom_words = set(symptom.split())
+
+    # allow fuzzy overlap OR phrase match OR manual mapping
+            if symptom_words & input_words or len(symptom_words) == 1:
+                cleaned_symptoms.append(symptom)
+                
+        original_words = set(re.findall(r"[a-z']+", text_lower))
+        matched_words = set()
+        for phrase in raw_mentions:
+            matched_words.update(phrase.lower().split())
+
+        noise_words = [
+            word for word in (original_words-matched_words)
+            if word not in STOPWORDS and len(word) >3
+        ]
+        found_symptoms = cleaned_symptoms
         return ExtractionResult(
-            symptoms     = found_symptoms,
+            symptoms = found_symptoms,
             raw_mentions = raw_mentions,
+ feature/context-aware-extraction
             negated      = negated_symptoms,
             tagged       = tagged,
+
+            negated = negated_symptoms,
+            noise = list(noise_words)   # 👈 ADD THIS
+ main
         )
 
     def _build_clause_ranges(self, text_lower: str) -> list[tuple[int, int]]:

@@ -24,7 +24,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 from groq import Groq
 from dotenv import load_dotenv
@@ -115,6 +115,10 @@ if get_groq_api_key():
 else:
     print("[startup] GROQ_API_KEY missing. Running in fallback mode without LLM.")
 
+# In-memory store for conversational state. Maps session_id -> list of symptoms.
+# In production, use Redis or a database.
+SESSION_STORE = {}
+
 # ---------------------------------------------------------------------------
 # Server-side session store  { session_id -> {symptoms, last_active} }
 # Sessions expire after 2 hours of inactivity.
@@ -123,8 +127,8 @@ SESSION_STORE: dict[str, dict] = {}
 SESSION_TTL = timedelta(hours=2)
 
 
-def _get_or_create_session(session_id: str | None) -> tuple[str, list[str]]:
-    """Return (session_id, current_symptoms). Creates a new session if needed."""
+def _get_or_create_session(session_id: str | None) -> tuple[str, list[dict]]:
+    """Return (session_id, current_symptoms). Symptoms are now dicts with metadata."""
     _purge_expired_sessions()
     if session_id and session_id in SESSION_STORE:
         SESSION_STORE[session_id]["last_active"] = datetime.utcnow()
@@ -160,17 +164,30 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 
 class Message(BaseModel):
-    role: str       # "user" or "model" (Gemini uses "model", but frontend might still send it)
-    content: str
+    role: str = Field(..., pattern="^(user|assistant|model)$")
+    content: str = Field(..., min_length=1, max_length=1000)
+
+class SymptomDetail(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    onset_order: Optional[int] = Field(None, ge=1, le=50)
+    duration: Optional[str] = Field(None, max_length=100)
+    severity: Optional[str] = Field(None, max_length=50)
 
 class TaggedSymptom(BaseModel):
     symptom: str
     status: str
 
 class ChatRequest(BaseModel):
+ feature/context-aware-extraction
     messages: List[Message]
     extracted_symptoms: Optional[List[str]] = []  # accumulate across turns
     extracted_symptoms_detailed: Optional[List[TaggedSymptom]] = []
+
+    messages: List[Message] = Field(..., max_length=20)
+    session_id: Optional[str] = Field(None, max_length=100)
+    extracted_symptoms: Optional[List[str]] = Field([], max_length=30)
+    temporal_context: Optional[List[SymptomDetail]] = Field([], max_length=30)
+ main
 
 class ChatResponse(BaseModel):
     reply: str
@@ -178,6 +195,7 @@ class ChatResponse(BaseModel):
     extracted_symptoms: List[str]
     extracted_symptoms_detailed: List[TaggedSymptom] = []
     symptom_timeline: List[str] = []
+    temporal_context: List[SymptomDetail] = [] # New: returned to frontend
     top_conditions: List[dict]
     rag_sources: List[str]
     graph_followups: List[str]
@@ -299,38 +317,51 @@ def call_groq_api(messages: list, model: str = "llama-3.1-8b-instant") -> str:
     return chat_completion.choices[0].message.content
 
 
-def merge_symptom_timeline(existing: List[str], newly_extracted: List[str]) -> List[str]:
+def merge_symptom_timeline(existing: List[dict], newly_extracted: List[str]) -> List[dict]:
     """Preserve first-seen order across turns while removing duplicates."""
-    merged: List[str] = []
-    seen = set()
+    merged: List[dict] = [dict(s) for s in (existing or [])]
+    seen = {s["name"].lower() for s in merged}
 
-    for symptom in (existing or []) + (newly_extracted or []):
+    for symptom in (newly_extracted or []):
         normalised = (symptom or "").strip().lower()
         if not normalised or normalised in seen:
             continue
         seen.add(normalised)
-        merged.append(normalised)
+        # Default to the next available order index
+        merged.append({
+            "name": normalised,
+            "onset_order": len(merged) + 1,
+            "duration": None,
+            "severity": None
+        })
     return merged
 
 
-def build_journey_edges(symptom_timeline: List[str], candidates: List[dict]) -> List[dict]:
-    """Build step-by-step symptom chain and threshold-gated first symptom->condition link."""
+def build_journey_edges(symptom_timeline: List[dict], candidates: List[dict]) -> List[dict]:
+    """Build step-by-step symptom chain based on onset_order."""
     edges: List[dict] = []
 
-    for i in range(len(symptom_timeline) - 1):
+    # Sort symptoms by their temporal onset for the journey visualization
+    sorted_symptoms = sorted(
+        symptom_timeline,
+        key=lambda x: x.get("onset_order") if x.get("onset_order") is not None else 999
+    )
+    names = [s["name"] for s in sorted_symptoms]
+
+    for i in range(len(names) - 1):
         edges.append({
-            "from": symptom_timeline[i],
-            "to": symptom_timeline[i + 1],
+            "from": names[i],
+            "to": names[i + 1],
             "edge_type": "SEQUENTIAL_SYMPTOM",
         })
 
-    if symptom_timeline and candidates:
+    if names and candidates:
         top = candidates[0]
         top_score = float(top.get("score", 0.0))
         top_condition_id = top.get("condition_id", "")
         if top_condition_id and top_score >= FINAL_LINK_THRESHOLD:
             edges.append({
-                "from": symptom_timeline[0],
+                "from": names[0],
                 "to": top_condition_id,
                 "edge_type": "FIRST_SYMPTOM_TO_CONDITION",
                 "score": round(top_score, 3),
@@ -350,15 +381,36 @@ async def chat(request: ChatRequest):
             ""
         )
 
-        # --- Session: load server-held symptom timeline ---
-        session_id, prior_symptoms = _get_or_create_session(request.session_id)
-
         # --- Step 1: NLP extraction ---
         extraction = NLP.extract(latest_user_msg)
-        all_symptoms = merge_symptom_timeline(prior_symptoms, extraction.symptoms)
+
+        # 🚨 Handle mixed valid + invalid input (from main)
+        noise_message = ""
+        if extraction.symptoms and getattr(extraction, 'noise', None):
+            noise_message = f"I understood {', '.join(extraction.symptoms)}, but some parts of your input were unclear."
+        elif not extraction.symptoms:
+            noise_message = "I couldn't identify any valid symptoms. Please describe your symptoms clearly."
+
+        # Temporal Context Logic (from feature branch)
+        all_symptoms_data = merge_symptom_timeline(prior_symptoms, extraction.symptoms)
+
+        if request.temporal_context:
+            for ctx in request.temporal_context:
+                ctx_name = ctx.name.lower().strip()
+                found = False
+                for sym in all_symptoms_data:
+                    if sym["name"] == ctx_name:
+                        if ctx.onset_order is not None: sym["onset_order"] = ctx.onset_order
+                        if ctx.duration: sym["duration"] = ctx.duration
+                        if ctx.severity: sym["severity"] = ctx.severity
+                        found = True
+                        break
+                if not found:
+                    all_symptoms_data.append(ctx.dict())
 
         # Persist merged timeline back to session store
-        SESSION_STORE[session_id]["symptoms"] = all_symptoms
+        SESSION_STORE[session_id]["symptoms"] = all_symptoms_data
+        all_symptom_names = [s["name"] for s in all_symptoms_data]
 
         existing_detailed = [t.dict() if not isinstance(t, dict) else t for t in (request.extracted_symptoms_detailed or [])]
         tagged_dict = {t["symptom"]: t["status"] for t in existing_detailed}
@@ -367,17 +419,17 @@ async def chat(request: ChatRequest):
         all_symptoms_detailed = [{"symptom": k, "status": v} for k, v in tagged_dict.items()]
 
         # --- Step 2: Red flag check ---
-        red_flags = check_red_flags(GRAPH, all_symptoms + (extraction.symptoms if extraction else []))
+        red_flags = check_red_flags(GRAPH, all_symptom_names)
 
         # --- Step 3: BFS graph traversal ---
-        candidates = traverse_graph(GRAPH, all_symptoms)
+        candidates = traverse_graph(GRAPH, all_symptoms_data)
         followup_questions = []
         top_condition = None
         if candidates:
             top_condition = candidates[0]["condition_id"]
             followup_questions = get_followup_questions(GRAPH, top_condition)
 
-        journey_edges = build_journey_edges(all_symptoms, candidates)
+        journey_edges = build_journey_edges(all_symptoms_data, candidates)
 
         # --- Step 4: RAG retrieval ---
         rag_context = RAG.retrieve_context(latest_user_msg, top_k=2)
@@ -390,6 +442,9 @@ async def chat(request: ChatRequest):
         system_prompt = build_system_prompt(
             extracted_symptoms=all_symptoms,
             extracted_symptoms_detailed=all_symptoms_detailed,
+
+            extracted_symptoms=all_symptom_names,
+ main
             candidate_conditions=candidates,
             rag_context=rag_context,
             followup_questions=followup_questions,
@@ -422,6 +477,22 @@ async def chat(request: ChatRequest):
                 + "\n".join([f"{m.role}: {m.content}" for m in request.messages])
             )
             reply = ask_groq(full_prompt)
+        # --- Step 6: Call Groq with full context ---
+        # Map roles to Groq roles ("user" -> "user", "model" -> "assistant")
+        messages = [{"role": "system", "content": system_prompt}]
+        for m in request.messages:
+            role = "user" if m.role == "user" else "assistant"
+            messages.append({"role": role, "content": m.content})
+
+        try:
+            reply = call_groq_api(messages)
+            if noise_message:
+                reply = noise_message + "\n\n" + reply
+        except Exception as e:
+            # Log full error for debugging
+            APIErrorHandler.log_error(e, "Groq API call failed in /chat endpoint")
+            # Get user-friendly message
+            reply = APIErrorHandler.get_user_message(e)
 
         return ChatResponse(
             reply=reply,
@@ -429,6 +500,9 @@ async def chat(request: ChatRequest):
             extracted_symptoms=all_symptoms,
             extracted_symptoms_detailed=[TaggedSymptom(**t) for t in all_symptoms_detailed],
             symptom_timeline=all_symptoms,
+            extracted_symptoms=all_symptom_names,
+            symptom_timeline=all_symptom_names,
+            temporal_context=[SymptomDetail(**s) for s in all_symptoms_data],
             top_conditions=[
                 {
                     "display":       c["display"],
